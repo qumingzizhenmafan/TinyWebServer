@@ -39,6 +39,8 @@ threadpool<T>::threadpool( int actor_model, connection_pool *connPool, int threa
     if (thread_number <= 0 || max_requests <= 0)
         throw std::exception();
     m_threads = new pthread_t[m_thread_number];
+    /*在C++中，new 如果内存分配失败会抛出 std::bad_alloc异常，而不是返回 nullptr。
+    所以严格来说，这个检查是多余的，因为在内存不足时，程序会抛出异常，而不会返回 nullptr。*/
     if (!m_threads)
         throw std::exception();
     for (int i = 0; i < thread_number; ++i)
@@ -48,6 +50,10 @@ threadpool<T>::threadpool( int actor_model, connection_pool *connPool, int threa
             delete[] m_threads;
             throw std::exception();
         }
+        /*用于将线程状态设置为“分离状态”。
+        分离状态的线程在执行完成后，系统会自动回收其资源，
+        而不需要通过 pthread_join() 来显式回收。
+        返回非零值表示分离失败*/
         if (pthread_detach(m_threads[i]))
         {
             delete[] m_threads;

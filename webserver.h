@@ -28,10 +28,13 @@ public:
     void init(int port , string user, string passWord, string databaseName,
               int log_write , int opt_linger, int trigmode, int sql_num,
               int thread_num, int close_log, int actor_model);
-
+    //线程池的初始化
     void thread_pool();
+    //数据库连接池的初始化，以及HTTP连接的数据的读取
     void sql_pool();
+    //日志类的初始化
     void log_write();
+    //测试模式的设置，主要针对listenfd和connfd的触发模式
     void trig_mode();
     void eventListen();
     void eventLoop();

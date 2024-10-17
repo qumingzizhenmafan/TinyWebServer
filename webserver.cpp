@@ -5,7 +5,7 @@ WebServer::WebServer()
     //http_conn类对象
     users = new http_conn[MAX_FD];
 
-    //root文件夹路径
+    //root文件夹路径（绝对路径）
     char server_path[200];
     getcwd(server_path, 200);
     char root[6] = "/root";

@@ -14,6 +14,7 @@ const char *error_404_form = "The requested file was not found on this server.\n
 const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the request file.\n";
 
+//对于HTTP连接获得数据库连接的锁
 locker m_lock;
 map<string, string> users;
 
@@ -63,8 +64,10 @@ void addfd(int epollfd, int fd, bool one_shot, int TRIGMode)
     event.data.fd = fd;
 
     if (1 == TRIGMode)
-        event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+        //数据可读 , 边缘触发 , tcp连接或写操作被对方关闭
+        event.events = EPOLLIN | EPOLLET | EPOLLRDHUP; 
     else
+        //数据可读 , tcp连接或写操作被对方关闭
         event.events = EPOLLIN | EPOLLRDHUP;
 
     if (one_shot)
@@ -94,10 +97,9 @@ void modfd(int epollfd, int fd, int ev, int TRIGMode)
     epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
 }
 
-int http_conn::m_user_count = 0;
-int http_conn::m_epollfd = -1;
+int http_conn::m_user_count = 0; //客户总数
+int http_conn::m_epollfd = -1;   //epoll文件描述符
 
-//关闭连接，关闭一个连接，客户总量减一
 void http_conn::close_conn(bool real_close)
 {
     if (real_close && (m_sockfd != -1))
@@ -108,10 +110,10 @@ void http_conn::close_conn(bool real_close)
         m_user_count--;
     }
 }
-
+//..?
 //初始化连接,外部调用初始化套接字地址
 void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int TRIGMode,
-                     int close_log, string user, string passwd, string sqlname)
+                    int close_log, string user, string passwd, string sqlname)
 {
     m_sockfd = sockfd;
     m_address = addr;
@@ -131,6 +133,7 @@ void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int TRIGMo
     init();
 }
 
+//..?
 //初始化新接受的连接
 //check_state默认为分析请求行状态
 void http_conn::init()
@@ -158,9 +161,6 @@ void http_conn::init()
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
     memset(m_real_file, '\0', FILENAME_LEN);
 }
-
-//从状态机，用于分析出一行内容
-//返回值为行的读取状态，有LINE_OK,LINE_BAD,LINE_OPEN
 http_conn::LINE_STATUS http_conn::parse_line()
 {
     char temp;
@@ -193,8 +193,6 @@ http_conn::LINE_STATUS http_conn::parse_line()
     return LINE_OPEN;
 }
 
-//循环读取客户数据，直到无数据可读或对方关闭连接
-//非阻塞ET工作模式下，需要一次性将数据读完
 bool http_conn::read_once()
 {
     if (m_read_idx >= READ_BUFFER_SIZE)
@@ -238,15 +236,16 @@ bool http_conn::read_once()
     }
 }
 
-//解析http请求行，获得请求方法，目标url及http版本号
 http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
 {
-    m_url = strpbrk(text, " \t");
+    m_url = strpbrk(text, " \t"); //strpbrk返回第一个匹配字符的指针
     if (!m_url)
     {
         return BAD_REQUEST;
     }
     *m_url++ = '\0';
+
+    //解析请求方法
     char *method = text;
     if (strcasecmp(method, "GET") == 0)
         m_method = GET;
@@ -257,18 +256,24 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
     }
     else
         return BAD_REQUEST;
-    m_url += strspn(m_url, " \t");
+
+    //分离url和http版本号
+    m_url += strspn(m_url, " \t");  //这个函数计算字符串 str1 中连续出现的、只包含在 str2 中字符的长度
     m_version = strpbrk(m_url, " \t");
     if (!m_version)
         return BAD_REQUEST;
     *m_version++ = '\0';
     m_version += strspn(m_version, " \t");
+
+    //解析HTTP版本号
     if (strcasecmp(m_version, "HTTP/1.1") != 0)
         return BAD_REQUEST;
+
+    //处理HTTP前缀
     if (strncasecmp(m_url, "http://", 7) == 0)
     {
         m_url += 7;
-        m_url = strchr(m_url, '/');
+        m_url = strchr(m_url, '/'); //查找字符第一次出现的位置
     }
 
     if (strncasecmp(m_url, "https://", 8) == 0)
@@ -285,8 +290,6 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
     m_check_state = CHECK_STATE_HEADER;
     return NO_REQUEST;
 }
-
-//解析http请求的一个头部信息
 http_conn::HTTP_CODE http_conn::parse_headers(char *text)
 {
     if (text[0] == '\0')
@@ -325,8 +328,6 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text)
     }
     return NO_REQUEST;
 }
-
-//判断http请求是否被完整读入
 http_conn::HTTP_CODE http_conn::parse_content(char *text)
 {
     if (m_read_idx >= (m_content_length + m_checked_idx))
@@ -338,7 +339,6 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
     }
     return NO_REQUEST;
 }
-
 http_conn::HTTP_CODE http_conn::process_read()
 {
     LINE_STATUS line_status = LINE_OK;
@@ -347,6 +347,11 @@ http_conn::HTTP_CODE http_conn::process_read()
 
     while ((m_check_state == CHECK_STATE_CONTENT && line_status == LINE_OK) || ((line_status = parse_line()) == LINE_OK))
     {
+        //？为什么在改变了m_start_line之前调用get_line，应该没法正确索引
+        //待优化的小细节
+        //对于读缓冲区的数据读取，是通过将缓冲区中的换行符变成/0来实现的
+        //m_start_line才是现在开始读取数据的起始位置
+        //而m_checked_idx是上一次数据检查完一行后的待检查区域的起始位置
         text = get_line();
         m_start_line = m_checked_idx;
         LOG_INFO("%s", text);
@@ -384,7 +389,6 @@ http_conn::HTTP_CODE http_conn::process_read()
     }
     return NO_REQUEST;
 }
-
 http_conn::HTTP_CODE http_conn::do_request()
 {
     strcpy(m_real_file, doc_root);
@@ -578,6 +582,8 @@ bool http_conn::write()
         }
     }
 }
+
+//用于将格式化的响应信息添加到 HTTP 连接的写缓冲区中
 bool http_conn::add_response(const char *format, ...)
 {
     if (m_write_idx >= WRITE_BUFFER_SIZE)
@@ -603,13 +609,14 @@ bool http_conn::add_status_line(int status, const char *title)
 }
 bool http_conn::add_headers(int content_len)
 {
-    return add_content_length(content_len) && add_linger() &&
-           add_blank_line();
+    return add_content_length(content_len) && add_linger() && add_blank_line();
 }
 bool http_conn::add_content_length(int content_len)
 {
     return add_response("Content-Length:%d\r\n", content_len);
 }
+
+//用于将 HTTP 响应的 Content-Type 头添加到 HTTP 连接的写缓冲区中，未完全实现
 bool http_conn::add_content_type()
 {
     return add_response("Content-Type:%s\r\n", "text/html");
@@ -694,6 +701,7 @@ void http_conn::process()
         return;
     }
     bool write_ret = process_write(read_ret);
+    //假如写缓冲区还有数据，则注册写事件
     if (!write_ret)
     {
         close_conn();

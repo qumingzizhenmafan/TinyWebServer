@@ -34,6 +34,7 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
 
 	for (int i = 0; i < MaxConn; i++)
 	{
+		//创建对象
 		MYSQL *con = NULL;
 		con = mysql_init(con);
 
@@ -42,6 +43,17 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
 			LOG_ERROR("MySQL Error");
 			exit(1);
 		}
+		/*
+		con = mysql_real_connect(con, 
+                         url.c_str(),      // MySQL 主机地址
+                         User.c_str(),     // 数据库用户名
+                         PassWord.c_str(), // 数据库密码
+                         DBName.c_str(),   // 数据库名称
+                         Port,             // 数据库端口号
+                         NULL,             // 不使用 Unix 套接字连接
+                         0);               // 默认不设置特殊的连接选项
+		*/
+		//连接到指定数据库
 		con = mysql_real_connect(con, url.c_str(), User.c_str(), PassWord.c_str(), DBName.c_str(), Port, NULL, 0);
 
 		if (con == NULL)
@@ -52,7 +64,7 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
 		connList.push_back(con);
 		++m_FreeConn;
 	}
-
+	//创建与数据库的最大连接数相关的信号量
 	reserve = sem(m_FreeConn);
 
 	m_MaxConn = m_FreeConn;
